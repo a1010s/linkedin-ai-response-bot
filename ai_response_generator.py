@@ -26,7 +26,16 @@ class AIResponseGenerator:
         self.openai_api_key = openai_api_key
         
         if OPENAI_AVAILABLE and self.openai_api_key:
-            openai.api_key = self.openai_api_key
+            # Initialize OpenAI client (version 1.98.0+)
+            try:
+                self.openai_client = openai.OpenAI(api_key=self.openai_api_key)
+                print("[DEBUG] ✓ OpenAI client initialized successfully")
+            except Exception as e:
+                print(f"[DEBUG] ✗ Failed to initialize OpenAI client: {str(e)}")
+                print("[DEBUG] Falling back to contextual templates")
+                self.openai_client = None
+        else:
+            self.openai_client = None
             
         # Load response templates
         self.templates = self._load_templates()
@@ -188,6 +197,27 @@ class AIResponseGenerator:
         
         return (is_job_related and has_enough_keywords), detected_type
     
+    def detect_language(self, message_content: str) -> str:
+        """
+        Detect the language of the incoming message.
+        Returns 'de' for German, 'en' for English.
+        """
+        german_indicators = [
+            'hallo', 'guten', 'tag', 'ich', 'bin', 'wir', 'sind', 'haben', 'können',
+            'möchten', 'würden', 'stelle', 'position', 'unternehmen', 'firma',
+            'bewerbung', 'lebenslauf', 'gehalt', 'vergütung', 'remote', 'homeoffice',
+            'interviews', 'gespräche', 'prozess', 'ablauf', 'viele', 'grüße',
+            'freundliche', 'beste', 'mit', 'für', 'auf', 'bei', 'zu', 'von'
+        ]
+        
+        message_lower = message_content.lower()
+        german_count = sum(1 for word in german_indicators if word in message_lower)
+        
+        # If we find several German indicators, assume German
+        if german_count >= 3:
+            return 'de'
+        return 'en'
+    
     def generate_response(self, message_content, sender_name="Recruiter"):
         """Generate a response to a job offer message.
         
@@ -198,59 +228,23 @@ class AIResponseGenerator:
         Returns:
             tuple: (is_job_offer, response) where is_job_offer is a boolean and response is a string
         """
-        # Classify the message
+        # Classify the message first
         is_job_offer, message_type = self.classify_message(message_content)
         
-        # Generate appropriate response based on message type
-        if message_type == "job_offer":
-            response = (
-                f"Hello {sender_name},\n\n"
-                "Thank you for reaching out regarding this opportunity. "
-                "I appreciate your consideration. \n\n"
-                "At the moment, I'm focusing on roles that align with my expertise in DevOps and cloud infrastructure. "
-                "Could you share more details about the position, including the tech stack and responsibilities? \n\n"
-                "I'm particularly interested in positions involving Kubernetes, CI/CD pipelines, and cloud platforms like AWS or Azure.\n\n"
-                "Looking forward to hearing more,\n"
-                "[Your Name]"
-            )
-        elif message_type == "technical_recruiter":
-            response = (
-                f"Hello {sender_name},\n\n"
-                "Thank you for reaching out about this technical opportunity. "
-                "I'm always interested in discussing roles that leverage my DevOps and cloud expertise. \n\n"
-                "Could you provide more specifics about the technical requirements, team structure, and project scope? "
-                "I'd like to understand how my experience with containerization, infrastructure as code, and automation "
-                "might be valuable for this position.\n\n"
-                "Best regards,\n"
-                "[Your Name]"
-            )
-        elif message_type == "networking":
-            response = (
-                f"Hello {sender_name},\n\n"
-                "Thank you for connecting! I'm always interested in expanding my professional network, "
-                "especially with others in the DevOps and cloud infrastructure space. \n\n"
-                "Feel free to reach out if you'd like to discuss industry trends or potential collaborations.\n\n"
-                "Best regards,\n"
-                "[Your Name]"
-            )
-        elif message_type == "sales_pitch":
-            response = (
-                f"Hello {sender_name},\n\n"
-                "Thank you for sharing information about your product/service. "
-                "At the moment, I'm not actively looking for new tools or services, "
-                "but I appreciate you thinking of me.\n\n"
-                "Best regards,\n"
-                "[Your Name]"
-            )
+        # Debug logging to see what's happening
+        print(f"[DEBUG] OPENAI_AVAILABLE: {OPENAI_AVAILABLE}")
+        print(f"[DEBUG] self.openai_api_key: {bool(self.openai_api_key)}")
+        print(f"[DEBUG] API key length: {len(self.openai_api_key) if self.openai_api_key else 0}")
+        
+        # Use OpenAI API if available, otherwise fall back to contextual templates
+        if OPENAI_AVAILABLE and self.openai_api_key:
+            print("[DEBUG] ✓ Using OpenAI API for response generation")
+            response = self.generate_ai_response(message_content, message_type, sender_name)
         else:
-            response = (
-                f"Hello {sender_name},\n\n"
-                "Thank you for your message. I appreciate you reaching out. "
-                "Could you provide a bit more context about your inquiry? "
-                "I'd be happy to continue the conversation once I better understand your message.\n\n"
-                "Best regards,\n"
-                "[Your Name]"
-            )
+            print("[DEBUG] ✗ Falling back to template response")
+            print(f"[DEBUG] Reason: OPENAI_AVAILABLE={OPENAI_AVAILABLE}, has_api_key={bool(self.openai_api_key)}")
+            # Fall back to contextual response with language detection
+            _, response = self.generate_contextual_response(message_content, sender_name)
         
         return is_job_offer, response
     
@@ -262,25 +256,41 @@ class AIResponseGenerator:
     
     def generate_ai_response(self, message_text: str, message_type: str, sender_name: str) -> str:
         """Generate a response using OpenAI."""
-        if not OPENAI_AVAILABLE or not self.openai_api_key:
-            return self.generate_template_response(message_type)
+        print(f"[DEBUG] generate_ai_response called with sender: {sender_name}")
+        print(f"[DEBUG] OPENAI_AVAILABLE in method: {OPENAI_AVAILABLE}")
+        print(f"[DEBUG] API key available in method: {bool(self.openai_api_key)}")
         
+        if not OPENAI_AVAILABLE or not self.openai_client:
+            print("[DEBUG] ✗ OpenAI not available, falling back to contextual template")
+            # Use contextual response with language detection as fallback
+            _, contextual_response = self.generate_contextual_response(message_text, sender_name)
+            return contextual_response
+        
+        print("[DEBUG] ✓ Making OpenAI API call...")
         try:
             system_prompt = (
                 "You are an assistant helping to respond to LinkedIn messages, particularly job offers. "
-                "Keep responses professional, brief (2-4 sentences), and polite. "
+                "Keep responses professional, brief (2–4 sentences), and polite. "
+                "Mirror the tone and formality of the message you receive: if the person uses 'Sie' or formal English, reply formally. "
+                "If they use 'du' or informal English, reply informally. Use the same language (German or English) as the original message. "
                 "Don't commit to anything specific. Ask clarifying questions about the role if appropriate. "
+                "Among others you should ask the expected salary or salary range, how many interviews are planed for the job and if it is fully remote possible"
                 "Be friendly but not overly enthusiastic."
             )
             
             user_prompt = (
-                f"Generate a brief, professional response to this LinkedIn message from {sender_name}: \n\n"
+                f"Generate a professional response to this LinkedIn message from {sender_name}: \n\n"
                 f"{message_text}\n\n"
                 f"Message type: {message_type}"
             )
             
-            response = openai.chat.completions.create(
-                model="gpt-3.5-turbo",
+            print(f"[DEBUG] Calling OpenAI with model: gpt-4o-mini")
+            print(f"[DEBUG] System prompt: {system_prompt[:100]}...")
+            print(f"[DEBUG] User prompt: {user_prompt[:100]}...")
+            
+            # Use modern OpenAI client API (version 1.98.0+)
+            response = self.openai_client.chat.completions.create(
+                model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
@@ -289,27 +299,106 @@ class AIResponseGenerator:
                 temperature=0.7
             )
             
-            return response.choices[0].message.content.strip()
-        except Exception:
-            # Fall back to template response if OpenAI fails
-            return self.generate_template_response(message_type)
+            ai_response = response.choices[0].message.content.strip()
+            print(f"[DEBUG] ✓ OpenAI API call successful!")
+            print(f"[DEBUG] AI Response: {ai_response[:100]}...")
+            return ai_response
+        except Exception as e:
+            print(f"[DEBUG] ✗ OpenAI API call failed: {str(e)}")
+            # Fall back to contextual response with language detection if OpenAI fails
+            _, contextual_response = self.generate_contextual_response(message_text, sender_name)
+            return contextual_response
     
-    def generate_response(self, message_text: str, sender_name: str) -> Tuple[bool, str]:
-        """
-        Generate a response to a LinkedIn message.
+    # Removed duplicate generate_response method - using the OpenAI-enabled version above
+    
+    def generate_contextual_response(self, message_content, sender_name="Recruiter"):
+        """Generate a contextual response with language detection and specific requirements.
         
         Args:
-            message_text: The text of the message to respond to
-            sender_name: The name of the message sender
+            message_content (str): The content of the message
+            sender_name (str): The name of the sender
             
         Returns:
-            Tuple of (is_job_offer, suggested_response)
+            tuple: (is_job_offer, response) where is_job_offer is a boolean and response is a string
         """
-        is_job_offer, message_type = self.classify_message(message_text)
+        # Classify the message and detect language
+        is_job_offer, message_type = self.classify_message(message_content)
+        language = self.detect_language(message_content)
         
-        if OPENAI_AVAILABLE and self.openai_api_key:
-            response = self.generate_ai_response(message_text, message_type, sender_name)
+        # Generate appropriate response based on message type and language
+        if language == 'de':
+            # German responses
+            if message_type == "job_offer" or message_type == "technical_recruiter":
+                response = (
+                    f"Hallo {sender_name},\n\n"
+                    "vielen Dank für Ihre Nachricht bezüglich dieser Gelegenheit. "
+                    "Ich schätze Ihr Interesse sehr.\n\n"
+                    "Als Senior DevOps und Platform Engineer mit Fokus auf Kubernetes, Terraform und Container-Technologien "
+                    "bin ich immer interessiert an spannenden Herausforderungen.\n\n"
+                    "Könnten Sie mir bitte weitere Details mitteilen:\n"
+                    "• Wie ist die Gehaltsvorstellung/der Gehaltsbereich?\n"
+                    "• Wie viele Interview-Runden sind im Recruiting-Prozess vorgesehen?\n"
+                    "• Ist 100% Remote-Arbeit möglich?\n\n"
+                    "Diese Informationen würden mir helfen zu verstehen, ob die Position zu meiner aktuellen Karriererichtung passt.\n\n"
+                    "Viele Grüße,\n"
+                    "Andrei"
+                )
+            elif message_type == "sales_pitch":
+                response = (
+                    f"Hallo {sender_name},\n\n"
+                    "vielen Dank für die Information über Ihr Produkt/Ihre Lösung. "
+                    "Als DevOps Engineer bin ich immer interessiert an innovativen Tools, "
+                    "die unsere Infrastruktur und Prozesse verbessern können.\n\n"
+                    "Könnten Sie mir mehr Details über die technische Integration und "
+                    "Kompatibilität mit Kubernetes/Container-Umgebungen mitteilen?\n\n"
+                    "Beste Grüße,\n"
+                    "Andrei"
+                )
+            else:
+                response = (
+                    f"Hallo {sender_name},\n\n"
+                    "vielen Dank für Ihre Nachricht. Ich schätze es, dass Sie sich gemeldet haben.\n\n"
+                    "Könnten Sie mir etwas mehr Kontext zu Ihrer Anfrage geben? "
+                    "Gerne setze ich das Gespräch fort, sobald ich Ihre Nachricht besser verstehe.\n\n"
+                    "Beste Grüße,\n"
+                    "Andrei"
+                )
         else:
-            response = self.generate_template_response(message_type)
-            
+            # English responses
+            if message_type == "job_offer" or message_type == "technical_recruiter":
+                response = (
+                    f"Hello {sender_name},\n\n"
+                    "Thank you for reaching out regarding this opportunity. "
+                    "I appreciate your consideration.\n\n"
+                    "As a Senior DevOps and Platform Engineer with focus on Kubernetes, Terraform, and container technologies, "
+                    "I'm always interested in exciting challenges.\n\n"
+                    "Could you please share more details about:\n"
+                    "• What is the expected salary range?\n"
+                    "• How many interview rounds are in the recruiting process?\n"
+                    "• Is 100% remote work possible?\n\n"
+                    "This information would help me understand if the role aligns with my current career direction.\n\n"
+                    "Best regards,\n"
+                    "Andrei"
+                )
+            elif message_type == "sales_pitch":
+                response = (
+                    f"Hello {sender_name},\n\n"
+                    "Thank you for sharing information about your product/solution. "
+                    "As a DevOps Engineer, I'm always interested in innovative tools "
+                    "that can improve our infrastructure and processes.\n\n"
+                    "Could you provide more details about technical integration and "
+                    "compatibility with Kubernetes/container environments?\n\n"
+                    "Best regards,\n"
+                    "Andrei"
+                )
+            else:
+                response = (
+                    f"Hello {sender_name},\n\n"
+                    "Thank you for your message. I appreciate you reaching out.\n\n"
+                    "Could you provide a bit more context about your inquiry? "
+                    "I'd be happy to continue the conversation once I better understand your message.\n\n"
+                    "Best regards,\n"
+                    "Andrei"
+                )
+        
         return is_job_offer, response

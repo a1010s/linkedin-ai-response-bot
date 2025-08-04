@@ -39,9 +39,17 @@ class LinkedInAgentPlaywright:
         load_dotenv()
         self.email = os.getenv("LINKEDIN_EMAIL")
         self.password = os.getenv("LINKEDIN_PASSWORD")
+        self.openai_api_key = os.getenv("OPENAI_API_KEY")
         
-        # Initialize AI response generator
-        self.ai_response_generator = AIResponseGenerator()
+        # Initialize AI response generator with OpenAI API key
+        self.ai_response_generator = AIResponseGenerator(openai_api_key=self.openai_api_key)
+        
+        # Log AI configuration status
+        if self.openai_api_key:
+            console.print("[bold green]✓ OpenAI API configured - using AI-generated responses[/bold green]")
+        else:
+            console.print("[bold yellow]⚠ OpenAI API not configured - using improved template responses[/bold yellow]")
+            console.print("[dim]Add OPENAI_API_KEY to .env file for AI-generated responses[/dim]")
         
         # Initialize Playwright objects
         self.playwright = None
@@ -74,7 +82,7 @@ class LinkedInAgentPlaywright:
         console.print("[bold blue]Launching browser with human-like properties...[/bold blue]")
         browser_type = self.playwright.chromium
         self.browser = await browser_type.launch(
-            headless=False,  # Set to False for visual debugging
+            headless=True,  # Set to True for Docker compatibility
             slow_mo=100,  # Increase delay for better visibility
             args=[
                 '--disable-blink-features=AutomationControlled',
