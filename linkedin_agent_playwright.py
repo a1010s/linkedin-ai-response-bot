@@ -82,7 +82,7 @@ class LinkedInAgentPlaywright:
         console.print("[bold blue]Launching browser with human-like properties...[/bold blue]")
         browser_type = self.playwright.chromium
         self.browser = await browser_type.launch(
-            headless=True,  # Set to True for Docker compatibility
+            headless=False,  # Set to False for visual debugging
             slow_mo=100,  # Increase delay for better visibility
             args=[
                 '--disable-blink-features=AutomationControlled',
@@ -872,14 +872,18 @@ class LinkedInAgentPlaywright:
                     if count > 0:
                         console.print(f"[bold green]Found {count} elements with selector: {selector}[/bold green]")
                         
-                        # Try to click and type using page methods directly
+                        # Use human-like letter-by-letter typing (LinkedIn detects instant JS content setting)
                         try:
                             await self.page.click(selector)
                             await self.human_delay(0.5, 1)
-                            await self.page.fill(selector, '')  # Clear any existing text
+                            
+                            # Clear any existing content first
+                            await self.page.fill(selector, '')
                             await self.human_delay(0.3, 0.7)
-                            await self.page.type(selector, response, delay=random.uniform(50, 150))
-                            console.print(f"[bold green]Successfully typed message using selector: {selector}[/bold green]")
+                            
+                            # Type letter by letter with human-like delays (LinkedIn expects this)
+                            await self.page.type(selector, response, delay=random.uniform(80, 150))
+                            console.print(f"[bold green]Successfully typed message letter-by-letter using selector: {selector}[/bold green]")
                             input_found = True
                             break
                         except Exception as e:
