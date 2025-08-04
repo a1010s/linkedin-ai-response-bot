@@ -833,12 +833,7 @@ class LinkedInAgentPlaywright:
         console.print("[bold blue]Sending response in current conversation...[/bold blue]")
         
         try:
-            # Take screenshot before sending for debugging
-            try:
-                await self.page.screenshot(path="before_sending.png")
-                console.print("[bold yellow]Saved screenshot before sending[/bold yellow]")
-            except Exception:
-                pass
+            # Screenshot removed for cleaner output
                 
             # Wait for the conversation container to be visible
             await self.page.wait_for_selector(".msg-s-message-list-container", timeout=10000)
@@ -881,8 +876,8 @@ class LinkedInAgentPlaywright:
                             await self.page.fill(selector, '')
                             await self.human_delay(0.3, 0.7)
                             
-                            # Type letter by letter with human-like delays (LinkedIn expects this)
-                            await self.page.type(selector, response, delay=random.uniform(80, 150))
+                            # Type letter by letter with faster, more reliable delays
+                            await self.page.type(selector, response, delay=random.uniform(30, 60), timeout=60000)
                             console.print(f"[bold green]Successfully typed message letter-by-letter using selector: {selector}[/bold green]")
                             input_found = True
                             break
