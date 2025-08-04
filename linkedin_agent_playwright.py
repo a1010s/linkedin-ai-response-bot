@@ -332,6 +332,32 @@ class LinkedInAgentPlaywright:
                     console.print(f"[bold yellow]Could not save debug screenshot: {str(e)}[/bold yellow]")
                 return []
             
+            # Click the "Ungelesen" (Unread) filter to show only unread messages
+            console.print("[bold blue]Clicking 'Ungelesen' filter to show only unread messages...[/bold blue]")
+            unread_filter_selectors = [
+                '[data-test-messaging-inbox-filters__filter-pill="UNREAD"]',  # Data attribute selector
+                'button[aria-pressed="true"]',  # Pressed button
+                '.artdeco-pill--selected',  # Selected pill
+                'button:has-text("Ungelesen")',  # Button with German text
+                'button:has-text("Unread")'  # Button with English text
+            ]
+            
+            unread_filter_clicked = False
+            for selector in unread_filter_selectors:
+                try:
+                    await self.page.wait_for_selector(selector, timeout=3000)
+                    await self.page.click(selector)
+                    await self.page.wait_for_timeout(2000)  # Wait for filter to apply
+                    console.print(f"[bold green]Successfully clicked unread filter with selector: {selector}[/bold green]")
+                    unread_filter_clicked = True
+                    break
+                except Exception as e:
+                    console.print(f"[bold yellow]Could not click unread filter with selector {selector}: {str(e)}[/bold yellow]")
+                    continue
+            
+            if not unread_filter_clicked:
+                console.print("[bold yellow]Could not click unread filter, proceeding with manual detection...[/bold yellow]")
+            
             # First identify unread conversations by their indicators
             unread_indicators = [
                 ".msg-conversation-card__unread-count",  # Primary unread count indicator
@@ -350,7 +376,25 @@ class LinkedInAgentPlaywright:
                 "[data-control-name='overlay.conversation_item']"  # Data attribute selector
             ]
             
-            # Get all conversation elements
+            # Scroll down the conversation list to load all conversations (LinkedIn loads them lazily)
+            console.print("[bold blue]Scrolling conversation list to load all conversations...[/bold blue]")
+            for scroll_attempt in range(5):  # Scroll 5 times to load more conversations
+                try:
+                    # Scroll within the conversation list container, not the whole page
+                    await self.page.evaluate("""
+                        const conversationList = document.querySelector('.msg-conversations-container__conversations-list') || 
+                                                document.querySelector('.msg-conversation-listitem').parentElement;
+                        if (conversationList) {
+                            conversationList.scrollTop = conversationList.scrollHeight;
+                        }
+                    """)
+                    await self.page.wait_for_timeout(2000)  # Wait for conversations to load
+                    console.print(f"[bold yellow]Scroll attempt {scroll_attempt + 1}/5 completed[/bold yellow]")
+                except Exception as e:
+                    console.print(f"[bold yellow]Scroll attempt {scroll_attempt + 1} failed: {str(e)}[/bold yellow]")
+                    pass
+            
+            # Get all conversation elements after scrolling
             all_conversations = []
             for selector in conversation_selectors:
                 try:
@@ -369,43 +413,34 @@ class LinkedInAgentPlaywright:
                 console.print("[bold red]Could not find any conversation elements[/bold red]")
                 return []
             
-            # Now identify which conversations are unread
-            unread_conversations = []
-            for i, conversation in enumerate(all_conversations):
-                try:
-                    # Check if this conversation has any unread indicators
-                    is_unread = False
-                    for indicator in unread_indicators:
-                        try:
-                            has_indicator = await conversation.locator(indicator).count() > 0
-                            if has_indicator:
-                                is_unread = True
-                                break
-                        except Exception:
-                            continue
-                    
-                    # If we couldn't find unread indicators, check if the conversation has a bold title
-                    # which often indicates unread status
-                    if not is_unread:
-                        try:
-                            # Check if the conversation title is bold (font-weight > 400)
-                            title_elements = await conversation.locator(".msg-conversation-listitem__participant-names, .msg-conversation-card__participant-names").all()
-                            for title in title_elements:
-                                font_weight = await self.page.evaluate(
-                                    "(element) => window.getComputedStyle(element).fontWeight", title
-                                )
-                                if font_weight and int(font_weight) > 400:  # Bold text
+            # After clicking unread filter, ALL conversations in the list are unread
+            if unread_filter_clicked:
+                console.print("[bold green]Unread filter active - treating all conversations as unread[/bold green]")
+                unread_conversations = all_conversations
+                console.print(f"[bold green]Found {len(unread_conversations)} unread conversations[/bold green]")
+            else:
+                # Fallback: manually detect unread conversations
+                console.print("[bold yellow]Using manual unread detection...[/bold yellow]")
+                unread_conversations = []
+                for i, conversation in enumerate(all_conversations):
+                    try:
+                        # Check if this conversation has any unread indicators
+                        is_unread = False
+                        for indicator in unread_indicators:
+                            try:
+                                has_indicator = await conversation.locator(indicator).count() > 0
+                                if has_indicator:
                                     is_unread = True
                                     break
-                        except Exception:
-                            pass
-                    
-                    if is_unread:
-                        unread_conversations.append(conversation)
-                        console.print(f"[bold green]Conversation {i+1} is unread[/bold green]")
-                except Exception as e:
-                    console.print(f"[bold yellow]Error checking conversation {i+1}: {str(e)}[/bold yellow]")
-                    continue
+                            except Exception:
+                                continue
+                        
+                        if is_unread:
+                            unread_conversations.append(conversation)
+                            console.print(f"[bold green]Conversation {len(unread_conversations)} is unread[/bold green]")
+                    except Exception as e:
+                        console.print(f"[bold yellow]Error checking conversation: {str(e)}[/bold yellow]")
+                        continue
             
             if not unread_conversations:
                 console.print("[bold green]No unread messages found[/bold green]")
@@ -413,17 +448,44 @@ class LinkedInAgentPlaywright:
             
             console.print(f"[bold green]Found {len(unread_conversations)} total unread conversations[/bold green]")
             
-            # Limit processing to a reasonable number to avoid excessive processing
-            max_to_process = min(len(unread_conversations), 20)  # Process at most 20 conversations
-            if len(unread_conversations) > max_to_process:
-                console.print(f"[bold yellow]Limiting to processing {max_to_process} out of {len(unread_conversations)} unread conversations[/bold yellow]")
-                unread_conversations = unread_conversations[:max_to_process]
+            # Process unread conversations one by one, re-checking after each to avoid processing answered messages
+            processed_count = 0
+            max_to_process = 20  # Safety limit
             
-            # Process each unread conversation IMMEDIATELY after clicking (like test script)
-            for i, unread in enumerate(unread_conversations):
+            while processed_count < max_to_process:
+                # Re-click unread filter to ensure we only see unread messages
+                console.print("[bold blue]Re-applying unread filter to get current unread messages...[/bold blue]")
+                for selector in unread_filter_selectors:
+                    try:
+                        await self.page.click(selector)
+                        await self.page.wait_for_timeout(2000)  # Wait for filter to apply
+                        console.print(f"[bold green]Re-applied unread filter[/bold green]")
+                        break
+                    except Exception:
+                        continue
+                
+                # Get current unread conversations (after filter re-application)
+                current_unread = []
+                for selector in conversation_selectors:
+                    try:
+                        items = await self.page.locator(selector).all()
+                        if items and len(items) > 0:
+                            current_unread = items
+                            break
+                    except Exception:
+                        continue
+                
+                if not current_unread:
+                    console.print("[bold green]No more unread messages found![/bold green]")
+                    break
+                
+                console.print(f"[bold blue]Found {len(current_unread)} current unread conversations[/bold blue]")
+                
+                # Process the first unread conversation
+                unread = current_unread[0]  # Always process the first one
                 try:
                     # Click on the conversation to open it
-                    console.print(f"[bold blue]Opening conversation {i+1}/{len(unread_conversations)}...[/bold blue]")
+                    console.print(f"[bold blue]Opening conversation {processed_count+1} (of current {len(current_unread)} unread)...[/bold blue]")
                     
                     # Make sure the element is visible in the viewport before clicking
                     await unread.scroll_into_view_if_needed()
@@ -450,8 +512,8 @@ class LinkedInAgentPlaywright:
                     
                     # Take a screenshot of the conversation for debugging
                     try:
-                        await self.page.screenshot(path=f"conversation_{i+1}.png")
-                        console.print(f"[bold blue]Saved screenshot of conversation {i+1}[/bold blue]")
+                        await self.page.screenshot(path=f"conversation_{processed_count+1}.png")
+                        console.print(f"[bold blue]Saved screenshot of conversation {processed_count+1}[/bold blue]")
                     except Exception:
                         pass
                     
@@ -534,7 +596,7 @@ class LinkedInAgentPlaywright:
                     if message_content:
                         # Display the message
                         console.print(Panel(f"[bold]From: {sender_name}[/bold]\n\n{message_content}", 
-                                           title=f"Unread Message {i+1}/{len(unread_conversations)}", 
+                                           title=f"Unread Message {processed_count+1}", 
                                            border_style="blue"))
                         
                         # Check if the message is a job offer
@@ -590,13 +652,18 @@ class LinkedInAgentPlaywright:
                     # Return to conversation list for next conversation
                     await self.return_to_conversation_list()
                     
+                    # Increment processed count
+                    processed_count += 1
+                    
                 except Exception as e:
-                    console.print(f"[bold red]Error processing conversation {i+1}: {str(e)}[/bold red]")
+                    console.print(f"[bold red]Error processing conversation {processed_count+1}: {str(e)}[/bold red]")
                     # Try to return to conversation list on error
                     try:
                         await self.return_to_conversation_list()
                     except Exception:
                         pass
+                    # Still increment count even on error to avoid infinite loop
+                    processed_count += 1
                     continue
             
             console.print("[bold green]All unread conversations processed![/bold green]")
@@ -984,12 +1051,7 @@ class LinkedInAgentPlaywright:
                 except Exception as e:
                     console.print(f"[bold red]Error pressing Enter key: {str(e)}[/bold red]")
             
-            # Take screenshot after sending
-            try:
-                await self.page.screenshot(path="after_sending.png")
-                console.print("[bold yellow]Saved screenshot after sending[/bold yellow]")
-            except Exception:
-                pass
+            # Screenshot removed for cleaner output
             
             return send_clicked or input_found  # Return True if we either typed the message or clicked send
             
