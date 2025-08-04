@@ -1,0 +1,32 @@
+{
+  "job_offer": [
+    "Thank you for reaching out about this opportunity. I appreciate you considering me for this role. Could you please share more details about the position and requirements? I'd be interested in learning more to see if it aligns with my experience and career goals.",
+    "I appreciate your message regarding this opportunity. I'm always open to discussing interesting roles. Could you provide more information about the position, including responsibilities and requirements? This would help me determine if it's a good fit for my background.",
+    "Thanks for thinking of me for this position. I'd like to learn more about the role and your company. Could you share details about the team, tech stack, and expectations? This would help me understand if it aligns with my current career direction.",
+    "Thank you for considering me for this position. I'm curious to learn more about the role and what you're looking for in an ideal candidate. Could you share additional details about the responsibilities and requirements?"
+  ],
+  "recruiter_intro": [
+    "Thank you for connecting. I'm always interested in learning about new opportunities that align with my skills and career goals. Could you tell me more about the specific role you have in mind?",
+    "I appreciate you reaching out. I'm selectively exploring new opportunities at the moment. Could you share more details about the position and company you're recruiting for?",
+    "Thanks for your message. I'm open to hearing about roles that match my experience and career objectives. Could you provide more information about the specific opportunity you're reaching out about?",
+    "Thank you for getting in touch. I'm interested in learning more about the role you're recruiting for. Could you share details about the position and company?"
+  ],
+  "follow_up": [
+    "Thank you for the additional information. I've reviewed the details, and I'm interested in discussing this further. Would you be available for a brief call to talk about the role in more depth?",
+    "Thanks for sharing more about the position. Based on what you've described, I'd like to learn more. What would be the next steps in the process?",
+    "I appreciate the details you've provided. This sounds interesting, and I'd like to explore this opportunity further. Could we schedule a time to discuss this role in more detail?",
+    "Thank you for the information. The role sounds interesting based on what you've shared. I'd be happy to have a conversation to learn more about the position and discuss how my background might be a fit."
+  ],
+  "not_interested": [
+    "Thank you for thinking of me for this opportunity. After careful consideration, I don't think this is the right fit for me at this time. I appreciate your consideration and wish you success in finding the right candidate.",
+    "I appreciate you reaching out about this role. After reviewing the details, I've decided to focus on opportunities that more closely align with my current career direction. Thank you for considering me, and I wish you all the best in your search.",
+    "Thank you for considering me for this position. While I appreciate the opportunity, I've decided to pursue other paths that better align with my current goals. I wish you success in finding the perfect candidate for this role.",
+    "I'm grateful for your interest in my profile. After reviewing the details, I believe I'm not the best match for this particular opportunity at this time. Thank you for reaching out, and I wish you all the best with your search."
+  ],
+  "other": [
+    "Thank you for your message. I appreciate you reaching out. Could you provide more information about what you'd like to discuss?",
+    "Thanks for connecting with me. I'd be happy to continue the conversation. Could you let me know more about what you had in mind?",
+    "I appreciate your message. To better respond, could you share more details about what you're looking to discuss?",
+    "Thank you for reaching out. I'm interested in learning more about the purpose of your message. Could you provide additional context?"
+  ]
+}

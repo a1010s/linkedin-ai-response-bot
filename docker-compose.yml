@@ -1,0 +1,38 @@
+# This docker-compose file defines two services that use the same Dockerfile (image)
+# but run different commands. This is a common pattern when you have multiple
+# entry points or modes for your application but the same codebase and dependencies.
+
+services:
+  # Service for one-time manual checks of LinkedIn messages
+  linkedin-agent:
+    build: .
+    container_name: linkedin-agent-manual
+    volumes:
+      - ./.env:/app/.env
+      - ./response_templates.json:/app/response_templates.json
+      - ./linkedin_cookies.json:/app/linkedin_cookies.json
+    environment:
+      - NON_INTERACTIVE=true  # Enable non-interactive mode for Docker
+      - AUTO_APPROVE=false    # Don't auto-approve messages
+      - RESPONSE_TIMEOUT=60   # Wait 60 seconds for input before skipping
+    command: python linkedin_agent_playwright.py
+    restart: "no"  # Don't auto-restart for manual mode
+    stdin_open: true  # Keep stdin open for possible input
+    tty: true         # Allocate a pseudo-TTY
+
+  # Service for scheduled periodic checks of LinkedIn messages
+  linkedin-agent-scheduled:
+    build: .
+    container_name: linkedin-agent-scheduled
+    volumes:
+      - ./.env:/app/.env
+      - ./response_templates.json:/app/response_templates.json
+      - ./linkedin_cookies.json:/app/linkedin_cookies.json
+    environment:
+      - NON_INTERACTIVE=true  # Enable non-interactive mode for Docker
+      - AUTO_APPROVE=false    # Don't auto-approve messages by default
+      - RESPONSE_TIMEOUT=60   # Wait 60 seconds for input before skipping
+    command: python scheduled_agent_playwright.py
+    restart: unless-stopped
+    stdin_open: true  # Keep stdin open for possible input
+    tty: true         # Allocate a pseudo-TTY

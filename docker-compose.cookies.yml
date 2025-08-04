@@ -1,0 +1,84 @@
+version: '3'
+
+services:
+  linkedin-cookie-saver:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - .:/app
+      - /tmp/.X11-unix:/tmp/.X11-unix  # X11 socket for GUI
+    environment:
+      - DISPLAY=host.docker.internal:0  # For macOS, connect to XQuartz
+    command: python -c "
+import os
+import json
+import asyncio
+from dotenv import load_dotenv
+from playwright.async_api import async_playwright
+from rich.console import Console
+
+console = Console()
+
+async def main():
+    # Load environment variables
+    load_dotenv()
+    
+    console.print('[bold green]LinkedIn Cookie Saver[/bold green]')
+    console.print('This script will help you manually log in to LinkedIn and save your session cookies.')
+    console.print('Follow the instructions in the browser window that will open.')
+    
+    # Start Playwright
+    async with async_playwright() as playwright:
+        # Launch the browser in non-headless mode
+        console.print('[bold blue]Launching browser...[/bold blue]')
+        browser = await playwright.chromium.launch(headless=False)
+        
+        # Create a new browser context
+        context = await browser.new_context(
+            viewport={'width': 1280, 'height': 720},
+            user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36'
+        )
+        
+        # Create a new page
+        page = await context.new_page()
+        
+        # Navigate to LinkedIn
+        console.print('[bold blue]Navigating to LinkedIn...[/bold blue]')
+        await page.goto('https://www.linkedin.com/')
+        
+        # Wait for user to manually log in
+        console.print('[bold yellow]Please log in to LinkedIn in the browser window.[/bold yellow]')
+        console.print('[bold yellow]Complete any security verifications if prompted.[/bold yellow]')
+        console.print('[bold yellow]Once you are fully logged in and can see your LinkedIn feed,[/bold yellow]')
+        console.print('[bold yellow]press Enter in this terminal to continue.[/bold yellow]')
+        
+        # Wait for user input
+        input('[bold blue]Press Enter when you have successfully logged in to LinkedIn...[/bold blue]')
+        
+        # Check if we're actually logged in by looking for feed elements
+        if await page.locator('.feed-identity-module, .global-nav').count() > 0:
+            console.print('[bold green]Login confirmed![/bold green]')
+            
+            # Export cookies
+            cookies = await context.cookies()
+            cookies_file = 'linkedin_cookies.json'
+            
+            with open(cookies_file, 'w') as f:
+                json.dump(cookies, f)
+            
+            console.print(f'[bold green]Cookies saved to {cookies_file}![/bold green]')
+            console.print('[bold yellow]Keep this file secure as it contains your LinkedIn session data.[/bold yellow]')
+            
+            # Wait a moment before closing
+            await asyncio.sleep(2)
+        else:
+            console.print('[bold red]Could not confirm login. Feed elements not found.[/bold red]')
+        
+        # Close the browser
+        await browser.close()
+        console.print('[bold blue]Browser closed.[/bold blue]')
+
+if __name__ == '__main__':
+    asyncio.run(main())
+    "
